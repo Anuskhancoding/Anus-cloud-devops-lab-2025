@@ -1,0 +1,16 @@
+all:
+  children:
+    bastion:
+      hosts:
+        bastion-host:
+          ansible_host: 16.171.219.41
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: /home/hp/devops-lab-key.pem
+    app:
+      hosts:
+        app-host:
+          ansible_host: 10.0.2.159
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: /home/hp/devops-lab-key.pem
+          ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p -i /home/hp/devops-lab-key.pem ubuntu@16.171.219.41"'
+
