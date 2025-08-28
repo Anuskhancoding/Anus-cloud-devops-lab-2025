@@ -1,0 +1,104 @@
+---
+- name: Configure EC2 instances
+  hosts: all
+  become: yes # sudo
+  vars_files:
+    - secrets.yml  # Load Vault-encrypted secrets
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Docker, Docker Compose, Python
+      apt:
+        name:
+          - docker.io
+          - docker-compose
+          - python3
+          - python3-pip
+        state: present
+
+    - name: Start and enable Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install UFW firewall
+      apt:
+        name: ufw
+        state: present
+
+    # ------------------------------
+    # Bastion rules
+    # ------------------------------
+    - name: Allow SSH on bastion
+      ufw:
+        rule: allow
+        port: 22
+        proto: tcp
+      when: inventory_hostname == 'bastion'
+
+    # ------------------------------
+    # App rules
+    # ------------------------------
+    - name: Allow SSH on app from bastion subnet
+      command: ufw allow from 10.0.1.0/24 to any port 22 proto tcp
+      when: inventory_hostname == 'app'
+
+    - name: Allow HTTP on app
+      ufw:
+        rule: allow
+        port: 80
+        proto: tcp
+      when: inventory_hostname == 'app'
+
+    # ------------------------------
+    # Enable firewall
+    # ------------------------------
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    # ------------------------------
+    # System hardening / users
+    # ------------------------------
+    - name: Create devops user
+      user:
+        name: devops
+        create_home: yes
+        shell: /bin/bash
+        groups: sudo,docker
+        append: yes
+
+    - name: Set password for devops user (temporary, change later)
+      user:
+        name: devops
+        password: "{{ 'devops123' | password_hash('sha512') }}"
+
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'
+
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted
+
+    # ------------------------------
+    # Store Jenkins credentials
+    # ------------------------------
+    - name: Store Jenkins username in SSM Parameter Store
+      command: >
+        aws ssm put-parameter --name "/devops/jenkins/username" --value "{{ jenkins_username }}" --type "SecureString" --region eu-north-1 --overwrite
+      no_log: true
+      when: inventory_hostname == 'bastion'
+
+    - name: Store Jenkins password in SSM
+      command: >
+        aws ssm put-parameter --name "/devops/jenkins/password" --value "{{ jenkins_password }}" --type "SecureString" --region eu-north-1 --overwrite
+      no_log: true
+      when: inventory_hostname == 'bastion'
+
